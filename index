@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registrazione Video</title>
+
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #000;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.camera {
+    width: 100%;
+    max-width: 500px;
+    height: 100vh;
+    max-height: 900px;
+    position: relative;
+    overflow: hidden;
+    background: #111;
+}
+
+/* Area video */
+.video-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #000;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+
+    /* Effetto visuale più lontana */
+    transform: scale(0.82) scaleX(-1);
+}
+
+/* Oscuramento leggero ai bordi */
+.video-container::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+        to bottom,
+        rgba(0,0,0,.35),
+        transparent 20%,
+        transparent 75%,
+        rgba(0,0,0,.55)
+    );
+}
+
+/* Pulsante chiudi */
+.close {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+
+    width: 42px;
+    height: 42px;
+    border: none;
+    border-radius: 50%;
+
+    background: rgba(0,0,0,.5);
+    color: white;
+    font-size: 26px;
+    cursor: pointer;
+}
+
+/* Indicatore registrazione */
+.recording-info {
+    position: absolute;
+    top: 25px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 8px 14px;
+    border-radius: 20px;
+    background: rgba(0,0,0,.5);
+    font-size: 14px;
+}
+
+.red-dot {
+    width: 9px;
+    height: 9px;
+    background: #ff3040;
+    border-radius: 50%;
+}
+
+/* Timer */
+.timer {
+    position: absolute;
+    top: 68px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 15px;
+}
+
+/* Controlli inferiori */
+.controls {
+    position: absolute;
+    bottom: 35px;
+    left: 0;
+    width: 100%;
+    z-index: 20;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 35px;
+}
+
+/* Pulsante registrazione */
+.record-button {
+    width: 78px;
+    height: 78px;
+
+    border-radius: 50%;
+    border: 5px solid white;
+
+    background: #ff3040;
+    cursor: pointer;
+
+    box-shadow: 0 4px 20px rgba(0,0,0,.5);
+    transition: .2s;
+}
+
+.record-button.recording {
+    background: #fff;
+}
+
+.record-button.recording::after {
+    content: "";
+    display: block;
+
+    width: 27px;
+    height: 27px;
+
+    margin: auto;
+
+    border-radius: 6px;
+    background: #ff3040;
+}
+
+/* Pulsante fotocamera */
+.camera-switch {
+    width: 52px;
+    height: 52px;
+
+    border: none;
+    border-radius: 50%;
+
+    background: rgba(0,0,0,.55);
+    color: white;
+
+    font-size: 25px;
+    cursor: pointer;
+}
+
+/* Messaggio */
+.message {
+    position: absolute;
+    left: 50%;
+    bottom: 125px;
+
+    transform: translateX(-50%);
+
+    width: 90%;
+    text-align: center;
+
+    padding: 10px 15px;
+
+    border-radius: 10px;
+    background: rgba(0,0,0,.65);
+
+    font-size: 14px;
+    display: none;
+    z-index: 30;
+}
+
+@media (max-width: 600px) {
+    .camera {
+        max-width: none;
+        max-height: none;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="camera">
+
+    <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <button class="close" onclick="stopCamera()">×</button>
+
+    <div class="recording-info">
+        <span class="red-dot"></span>
+        <span id="status">PRONTO</span>
+    </div>
+
+    <div class="timer" id="timer">00:00</div>
+
+    <div class="message" id="message"></div>
+
+    <div class="controls">
+
+        <button
+            class="camera-switch"
+            id="switchCamera"
+            onclick="switchCamera()">
+            ↻
+        </button>
+
+        <button
+            class="record-button"
+            id="recordButton"
+            onclick="toggleRecording()">
+        </button>
+
+    </div>
+
+</div>
+
+<script>
+
+const video = document.getElementById("video");
+const recordButton = document.getElementById("recordButton");
+const statusText = document.getElementById("status");
+const timerElement = document.getElementById("timer");
+const message = document.getElementById("message");
+
+let stream = null;
+let recorder = null;
+let chunks = [];
+
+let recording = false;
+let seconds = 0;
+let timerInterval = null;
+
+let currentCamera = "user";
+
+/* Mostra messaggi */
+function showMessage(text) {
+    message.textContent = text;
+    message.style.display = "block";
+
+    setTimeout(() => {
+        message.style.display = "none";
+    }, 3000);
+}
+
+/* Avvia fotocamera */
+async function startCamera() {
+
+    try {
+
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: currentCamera,
+
+                /*
+                 * Risoluzione alta per mantenere
+                 * una buona qualità anche con
+                 * la visuale più lontana.
+                 */
+                width: {
+                    ideal: 1920
+                },
+                height: {
+                    ideal: 1080
+                }
+            },
+            audio: true
+        });
+
+        video.srcObject = stream;
+
+        /*
+         * La camera frontale viene specchiata.
+         * La riduzione a 82% crea una visuale
+         * apparentemente più distante.
+         */
+        if (currentCamera === "user") {
+            video.style.transform = "scale(0.82) scaleX(-1)";
+        } else {
+            video.style.transform = "scale(0.82)";
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        showMessage(
+            "Impossibile accedere alla fotocamera. Controlla i permessi."
+        );
+    }
+}
+
+/* Cambia fotocamera */
+async function switchCamera() {
+
+    currentCamera =
+        currentCamera === "user"
+        ? "environment"
+        : "user";
+
+    await startCamera();
+}
+
+/* Avvia / ferma registrazione */
+function toggleRecording() {
+
+    if (!stream) {
+        showMessage("Fotocamera non disponibile.");
+        return;
+    }
+
+    if (!recording) {
+        startRecording();
+    } else {
+        stopRecording();
+    }
+}
+
+/* Avvia registrazione */
+function startRecording() {
+
+    chunks = [];
+
+    try {
+
+        recorder = new MediaRecorder(stream, {
+            mimeType: "video/webm;codecs=vp9"
+        });
+
+    } catch (error) {
+
+        recorder = new MediaRecorder(stream);
+    }
+
+    recorder.ondataavailable = event => {
+
+        if (event.data.size > 0) {
+            chunks.push(event.data);
+        }
+    };
+
+    recorder.onstop = saveVideo;
+
+    recorder.start();
+
+    recording = true;
+
+    recordButton.classList.add("recording");
+    statusText.textContent = "REGISTRAZIONE";
+
+    seconds = 0;
+
+    timerInterval = setInterval(() => {
+
+        seconds++;
+
+        const minutes =
+            Math.floor(seconds / 60)
+            .toString()
+            .padStart(2, "0");
+
+        const secs =
+            (seconds % 60)
+            .toString()
+            .padStart(2, "0");
+
+        timerElement.textContent =
+            `${minutes}:${secs}`;
+
+    }, 1000);
+}
+
+/* Ferma registrazione */
+function stopRecording() {
+
+    if (!recorder) return;
+
+    recorder.stop();
+
+    recording = false;
+
+    recordButton.classList.remove("recording");
+
+    statusText.textContent = "PRONTO";
+
+    clearInterval(timerInterval);
+}
+
+/* Salva video */
+function saveVideo() {
+
+    const blob = new Blob(
+        chunks,
+        {
+            type: "video/webm"
+        }
+    );
+
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download =
+        "registrazione-" +
+        Date.now() +
+        ".webm";
+
+    link.click();
+
+    setTimeout(() => {
+        URL.revokeObjectURL(url);
+    }, 1000);
+
+    chunks = [];
+}
+
+/* Arresta fotocamera */
+function stopCamera() {
+
+    if (recording) {
+        stopRecording();
+    }
+
+    if (stream) {
+
+        stream.getTracks().forEach(track => {
+            track.stop();
+        });
+
+        stream = null;
+    }
+
+    video.srcObject = null;
+
+    statusText.textContent = "CAMERA OFF";
+}
+
+/* Avvio automatico */
+window.addEventListener("load", () => {
+    startCamera();
+});
+
+</script>
+
+</body>
+</html>
